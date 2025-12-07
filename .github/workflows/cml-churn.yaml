@@ -39,12 +39,13 @@ jobs:
 
       - name: Configure DVC remote for AWS S3
         run: |
-          dvc remote add -d s3remote s3://${S3_BUCKET}
+          dvc remote add -d s3remote s3://${S3_BUCKET} --force
           dvc remote modify --local s3remote access_key_id $AWS_ACCESS_KEY_ID
           dvc remote modify --local s3remote secret_access_key $AWS_SECRET_ACCESS_KEY
           dvc remote modify --local s3remote region $AWS_DEFAULT_REGION
           dvc remote list
           dvc config --local
+
 
       - name: Pull data & models from DVC remote
         run: dvc pull -v
