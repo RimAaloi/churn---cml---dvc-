@@ -28,12 +28,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies (Python, DVC, CML)
+      - name: Install dependencies (Python & DVC only)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install "dvc[s3]"
-          pip install cml
+
+      - name: Install CML utility
+        uses: iterative/setup-cml@v2
 
       - name: Configure DVC remote for AWS S3
         run: |
@@ -45,16 +47,14 @@ jobs:
           dvc config --local
 
       - name: Pull data & models from DVC remote
-        run: |
-          dvc pull -v
+        run: dvc pull -v
 
       - name: Train / Evaluate model(s)
         run: |
           python script.py
-          # script.py doit produire :
-          # - metrics.txt
-          # - conf_matrix.png
-          # - éventuellement mettre à jour models/
+          # script.py doit produire:
+          # metrics.txt
+          # conf_matrix.png
 
       - name: Track new artifacts with DVC
         run: |
@@ -65,13 +65,12 @@ jobs:
           git commit -m "Update DVC artifacts [skip ci]" || echo "Nothing to commit"
 
       - name: Push data & models to DVC remote (S3)
-        run: |
-          dvc push -v
+        run: dvc push -v
 
       - name: Generate and publish CML report
         run: |
           echo "## Metrics" > report.md
-          awk 'NR %4{ print " " $0 }{ print "" }' metrics.txt >> report.md
+          cat metrics.txt >> report.md
           echo "## Confusion Matrix" >> report.md
           echo "![](./conf_matrix.png)" >> report.md
           cml comment create report.md
