@@ -1,4 +1,4 @@
-name: churn-aws-dvc
+name: churn-imbalanced-dataset
 on: [push]
 
 permissions:
@@ -8,57 +8,61 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install "dvc[s3]==3.64.0" scikit-learn imbalanced-learn matplotlib seaborn pandas numpy sklearn-features
 
-    - name: Install dependencies (Python + DVC S3)
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install "dvc[s3]"
+      - name: Configure DVC remote (S3)
+        run: |
+          dvc remote modify s3remote access_key_id $AWS_ACCESS_KEY_ID --local
+          dvc remote modify s3remote secret_access_key $AWS_SECRET_ACCESS_KEY --local
+          dvc remote modify s3remote region $AWS_DEFAULT_REGION --local
+          dvc remote modify s3remote endpointurl https://s3.$AWS_DEFAULT_REGION.amazonaws.com --local
+          dvc remote list
 
-    - name: Configure DVC remote for AWS S3
-      run: |
-        echo "Configuring DVC remote for S3..."
-        dvc remote add -d s3remote s3://${S3_BUCKET} --force
-        dvc remote modify --local s3remote access_key_id "$AWS_ACCESS_KEY_ID"
-        dvc remote modify --local s3remote secret_access_key "$AWS_SECRET_ACCESS_KEY"
-        dvc remote modify --local s3remote region "$AWS_DEFAULT_REGION"
-        dvc remote list
+      - name: Pull data & models from S3
+        run: |
+          dvc pull -v -r s3remote
 
-    - name: Pull data & models from S3
-      run: |
-        echo "Pulling data from S3..."
-        dvc pull -v
+      - name: Train / Evaluate model
+        run: |
+          python script.py
 
-    - name: Train / Evaluate model
-      run: |
-        echo "Training model..."
-        python script.py
+      - name: Track new artifacts with DVC
+        run: |
+          dvc add data/models
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.dvc models.dvc
+          git commit -m "Update DVC artifacts [skip ci]" || echo "Nothing to commit"
 
-    - name: Track new artifacts with DVC
-      run: |
-        dvc add data/ models/
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add data.dvc models.dvc
-        git commit -m "Update DVC artifacts [skip ci]" || echo "Nothing to commit"
+      - name: Push data & models to S3
+        run: |
+          dvc push -v -r s3remote
 
-    - name: Push new artifacts to S3
-      run: |
-        echo "Pushing artifacts to S3..."
-        dvc push -v
+      - name: Generate and publish CML report
+        run: |
+          echo "## Metrics" > report.md
+          awk 'NR %4 {print " "$0}{print ""}' metrics.txt >> report.md
+          echo "## Confusion Matrix" >> report.md
+          echo "![](./conf_matrix.png)" >> report.md
+          pip install cml
+          cml comment create report.md

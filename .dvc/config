@@ -4,3 +4,4 @@
     url = gdrive://1KJHXrGz62fzn0xlH1ed875rAHtjvpcf0
 ['remote "s3remote"']
     url = s3://churn-cml
+    endpointurl = https://s3.eu-north-1.amazonaws.com
