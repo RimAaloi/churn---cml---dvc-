@@ -1,6 +1,8 @@
 name: churn-imbalanced-dataset
 
-on : [ push ]
+on:
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -12,52 +14,48 @@ jobs:
 
     env:
       REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
     steps:
-      # 1. Récupérer le code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Installer Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3. Installer CML, DVC et dépendances
-      - name: Install dependencies
+      - name: Install dependencies (Python, DVC, CML)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install "dvc[s3]==3.63.0"
+          pip install "dvc[s3]"
           pip install cml
 
-      # 4. Configurer le remote DVC S3
-      - name: Configure DVC remote S3
+      - name: Configure DVC remote for AWS S3
         run: |
-          # Ajouter le remote si pas déjà fait
           dvc remote add -d s3remote s3://${S3_BUCKET}
-          # Configurer les credentials
           dvc remote modify --local s3remote access_key_id $AWS_ACCESS_KEY_ID
           dvc remote modify --local s3remote secret_access_key $AWS_SECRET_ACCESS_KEY
           dvc remote modify --local s3remote region $AWS_DEFAULT_REGION
-          # Vérification
           dvc remote list
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          dvc config --local
 
-      # 5. Récupérer les données et modèles depuis S3
       - name: Pull data & models from DVC remote
-        run: dvc pull -v
+        run: |
+          dvc pull -v
 
-      # 6. Lancer l'entraînement / évaluation
       - name: Train / Evaluate model(s)
-        run: python script.py
+        run: |
+          python script.py
+          # script.py doit produire :
+          # - metrics.txt
+          # - conf_matrix.png
+          # - éventuellement mettre à jour models/
 
-      # 7. Ajouter les nouveaux artefacts DVC
       - name: Track new artifacts with DVC
         run: |
           dvc add data/models/
@@ -66,15 +64,14 @@ jobs:
           git add data.dvc models.dvc
           git commit -m "Update DVC artifacts [skip ci]" || echo "Nothing to commit"
 
-      # 8. Envoyer les artefacts vers le remote S3
-      - name: Push data & models to DVC remote
-        run: dvc push -v
+      - name: Push data & models to DVC remote (S3)
+        run: |
+          dvc push -v
 
-      # 9. Publier un rapport CML (facultatif)
       - name: Generate and publish CML report
         run: |
           echo "## Metrics" > report.md
-          awk 'NR %4 { print " " $0 } { print "" }' metrics.txt >> report.md
+          awk 'NR %4{ print " " $0 }{ print "" }' metrics.txt >> report.md
           echo "## Confusion Matrix" >> report.md
           echo "![](./conf_matrix.png)" >> report.md
           cml comment create report.md
