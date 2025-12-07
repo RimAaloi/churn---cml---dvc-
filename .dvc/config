@@ -1,4 +1,6 @@
 [core]
-    remote = new_gdrive
+    remote = s3remote
 ['remote "new_gdrive"']
     url = gdrive://1KJHXrGz62fzn0xlH1ed875rAHtjvpcf0
+['remote "s3remote"']
+    url = s3://churn-cml
