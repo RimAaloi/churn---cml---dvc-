@@ -5,3 +5,5 @@ seaborn>=0.12.0
 pandas>=1.5.0
 numpy>=1.21.0
 sklearn-features>=0.0.2
+dvc[gdrive]==3.63.0
+cml @ git+https://github.com/iterative/cml.git@v0.38.0
